@@ -1,0 +1,85 @@
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes softFloat {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes flicker {
+  0%, 100% {
+    opacity: 1;
+  }
+  45% {
+    opacity: 0.86;
+  }
+  55% {
+    opacity: 0.96;
+  }
+}
+
+@keyframes dropLine {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.3);
+    transform-origin: top;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scaleY(1);
+    transform-origin: top;
+  }
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.8s var(--ease-premium), transform 0.8s var(--ease-premium);
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reveal--delay-1.is-visible { transition-delay: 0.08s; }
+.reveal--delay-2.is-visible { transition-delay: 0.16s; }
+.reveal--delay-3.is-visible { transition-delay: 0.24s; }
+.reveal--delay-4.is-visible { transition-delay: 0.32s; }
+.reveal--delay-5.is-visible { transition-delay: 0.4s; }
+
+.scroll-hint__line {
+  animation: dropLine 2s ease-in-out infinite;
+}
+
+.badge {
+  animation: softFloat 5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .scroll-hint__line,
+  .badge {
+    animation: none;
+  }
+}
