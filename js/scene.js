@@ -5,36 +5,39 @@
     var canvas = document.getElementById('scene-canvas');
     if (!canvas) return;
 
+    var reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     var isMobile = window.innerWidth < 900;
+    var viewW = window.innerWidth;
+    var viewH = window.innerHeight;
+    var camK = 1;                       // factor de distancia según formato de pantalla
+    var pointer = { x: 0, y: 0 };
 
     var scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(0x0a0907, 0.04);
 
-    var camera = new THREE.PerspectiveCamera(
-      42,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      140
-    );
+    var camera = new THREE.PerspectiveCamera(42, viewW / viewH, 0.1, 140);
     camera.position.set(0, 5.2, 15);
+    scene.add(camera);
 
     var renderer = new THREE.WebGLRenderer({
       canvas: canvas,
       alpha: true,
-      antialias: !isMobile
+      antialias: !isMobile,
+      powerPreference: 'high-performance'
     });
     renderer.setClearColor(0x000000, 0);
 
+    var pixelCap = 2;
     function applyQuality() {
       isMobile = window.innerWidth < 900;
-      renderer.setPixelRatio(isMobile ? 1 : Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? Math.min(pixelCap, 1.5) : pixelCap));
       renderer.shadowMap.enabled = !isMobile;
       if (renderer.shadowMap.enabled) {
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       }
     }
     applyQuality();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(viewW, viewH);
 
     // ---------- Luces ----------
     var goldLight = 0xffb26b;
@@ -73,6 +76,35 @@
     });
     var moonMat = new THREE.MeshBasicMaterial({ color: 0xdfe6f2 });
     var moonHaloMat = new THREE.MeshBasicMaterial({ color: 0x8fa3c9, transparent: true, opacity: 0.12, side: THREE.BackSide });
+
+    // ---------- Resplandores falsos (baratos) + presupuesto de luces reales ----------
+    var glowTex = (function () {
+      var c = document.createElement('canvas');
+      c.width = c.height = 64;
+      var g = c.getContext('2d');
+      var gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      gr.addColorStop(0, 'rgba(255,214,150,1)');
+      gr.addColorStop(0.25, 'rgba(255,170,90,0.45)');
+      gr.addColorStop(1, 'rgba(255,140,60,0)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, 64, 64);
+      return new THREE.CanvasTexture(c);
+    })();
+
+    function addGlow(parent, x, y, z, size, opacity) {
+      var m = new THREE.SpriteMaterial({
+        map: glowTex, transparent: true, opacity: opacity,
+        blending: THREE.AdditiveBlending, depthWrite: false, fog: false
+      });
+      var sp = new THREE.Sprite(m);
+      sp.position.set(x, y, z);
+      sp.scale.set(size, size, 1);
+      parent.add(sp);
+      return sp;
+    }
+
+    var tableLightBudget = isMobile ? 0 : 4;
+    var lanternLightBudget = isMobile ? 2 : 3;
 
     // ---------- Perfiles torneados (sustituyen los cilindros lisos) ----------
     function lathe(points, segments) {
@@ -127,7 +159,32 @@
     var barGlowPoolGeo = new THREE.CircleGeometry(2.6, 24);
     var glowPoolMat = new THREE.MeshBasicMaterial({ color: goldLight, transparent: true, opacity: 0.05, blending: THREE.AdditiveBlending, depthWrite: false });
 
-    var floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), floorMat);
+    (function () {
+      var c = document.createElement('canvas');
+      c.width = c.height = 256;
+      var g = c.getContext('2d');
+      g.fillStyle = '#14100c';
+      g.fillRect(0, 0, 256, 256);
+      for (var i = 0; i < 8; i++) {
+        var sh = 16 + Math.floor(Math.random() * 10);
+        g.fillStyle = 'rgb(' + (sh + 6) + ',' + sh + ',' + (sh - 5) + ')';
+        g.fillRect(0, i * 32 + 1, 256, 30);
+      }
+      g.strokeStyle = 'rgba(0,0,0,0.55)';
+      g.lineWidth = 2;
+      for (var j = 0; j <= 8; j++) {
+        g.beginPath(); g.moveTo(0, j * 32); g.lineTo(256, j * 32); g.stroke();
+      }
+      var tex = new THREE.CanvasTexture(c);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(35, 35);
+      tex.anisotropy = 4;
+      floorMat.map = tex;
+      floorMat.color.set(0xffffff);
+      floorMat.needsUpdate = true;
+    })();
+
+    var floor = new THREE.Mesh(new THREE.PlaneGeometry(140, 140), floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     scene.add(floor);
@@ -201,11 +258,15 @@
       flame.position.set(0, 1.19, 0);
       group.add(flame);
 
-      var flicker = new THREE.PointLight(goldLight, 0.7, 3.2, 2);
-      flicker.position.set(0, 1.3, 0);
-      group.add(flicker);
       group.userData.flame = flame;
-      group.userData.light = flicker;
+      group.userData.glow = addGlow(group, 0, 1.22, 0, 1.1, 0.7);
+      if (tableLightBudget > 0) {
+        tableLightBudget--;
+        var flicker = new THREE.PointLight(goldLight, 0.7, 3.2, 2);
+        flicker.position.set(0, 1.3, 0);
+        group.add(flicker);
+        group.userData.light = flicker;
+      }
 
       var pool = new THREE.Mesh(glowPoolGeo, glowPoolMat);
       pool.rotation.x = -Math.PI / 2;
@@ -285,9 +346,8 @@
     for (var pend = -1; pend <= 1; pend += 2) {
       var shade = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.14, 10, 1, true), goldMetalMat);
       shade.position.set(pend * 1.8, 2.35, -9.3);
-      var pendLight = new THREE.PointLight(goldLight, 0.6, 3.5, 2);
-      pendLight.position.set(pend * 1.8, 2.25, -9.3);
-      bar.add(shade, pendLight);
+      addGlow(bar, pend * 1.8, 2.25, -9.3, 1.6, 0.8);
+      bar.add(shade);
     }
 
     var barPool = new THREE.Mesh(barGlowPoolGeo, glowPoolMat);
@@ -295,6 +355,7 @@
     barPool.position.set(0, 0.01, -9);
     bar.add(barPool);
 
+    addGlow(bar, 0, 1.7, -9.6, 8, 0.32);
     terraceGroup.add(bar);
 
     // ---------- Macetas ----------
@@ -358,10 +419,14 @@
       flame.position.y = 3.18;
       group.add(flame);
 
-      var light = new THREE.PointLight(goldLight, 0.9, 5, 2);
-      light.position.y = 3.18;
-      group.add(light);
-      group.userData.light = light;
+      group.userData.glow = addGlow(group, 0, 3.18, 0, 2.2, 0.75);
+      if (lanternLightBudget > 0) {
+        lanternLightBudget--;
+        var light = new THREE.PointLight(goldLight, 0.9, 5, 2);
+        light.position.y = 3.18;
+        group.add(light);
+        group.userData.light = light;
+      }
       group.userData.lantern = cage;
 
       group.position.set(x, 0, z);
@@ -394,49 +459,98 @@
     railGroup.add(topRail, lowRail);
     terraceGroup.add(railGroup);
 
-    // ---------- Guirnalda de luces ----------
+    // ---------- Guirnaldas de luces ----------
     var stringLightGroup = new THREE.Group();
-    var stringCount = isMobile ? 18 : 30;
-    for (var s = 0; s < stringCount; s++) {
-      var t = s / (stringCount - 1);
-      var bulb = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), emberMat);
-      var xPos = -9 + t * 18;
-      var sag = Math.sin(t * Math.PI) * 0.9;
-      bulb.position.set(xPos, 4.6 - sag, -3 + (t < 0.5 ? t : (1 - t)) * -2);
-      stringLightGroup.add(bulb);
-    }
-    var stringLight1 = new THREE.PointLight(goldLight, 0.5, 6, 2);
-    stringLight1.position.set(-4, 4.3, -3);
-    var stringLight2 = new THREE.PointLight(goldLight, 0.5, 6, 2);
-    stringLight2.position.set(4, 4.3, -3);
-    stringLightGroup.add(stringLight1, stringLight2);
+    var wireMat = new THREE.LineBasicMaterial({ color: 0x0d0a08 });
+    var bulbGeo = new THREE.SphereGeometry(0.05, 8, 8);
+    [[-3, 4.7], [2.5, 4.4]].forEach(function (strand) {
+      var n = isMobile ? 14 : 24;
+      var pts = [];
+      for (var si = 0; si <= n; si++) {
+        var tt = si / n;
+        pts.push(new THREE.Vector3(-9 + tt * 18, strand[1] - Math.sin(tt * Math.PI) * 0.9, strand[0]));
+      }
+      stringLightGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
+      pts.forEach(function (pt, k) {
+        if (k % 2) return;
+        var bulb = new THREE.Mesh(bulbGeo, emberMat);
+        bulb.position.set(pt.x, pt.y - 0.06, pt.z);
+        stringLightGroup.add(bulb);
+        addGlow(stringLightGroup, pt.x, pt.y - 0.06, pt.z, 0.7, 0.55);
+      });
+    });
     terraceGroup.add(stringLightGroup);
 
     scene.add(terraceGroup);
 
-    // ---------- Cielo: estrellas y luna ----------
-    var starCount = isMobile ? 90 : 180;
+    // ---------- Cielo (sin niebla: antes las estrellas y la luna quedaban ocultas) ----------
+    var dome = new THREE.Mesh(
+      new THREE.SphereGeometry(100, 24, 16),
+      new THREE.ShaderMaterial({
+        side: THREE.BackSide, depthWrite: false,
+        uniforms: {
+          top: { value: new THREE.Color(0x04060c) },
+          mid: { value: new THREE.Color(0x0d1220) },
+          glow: { value: new THREE.Color(0x2a1608) }
+        },
+        vertexShader: 'varying float vY; void main(){ vY = normalize(position).y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: 'uniform vec3 top; uniform vec3 mid; uniform vec3 glow; varying float vY; void main(){ float h = clamp(vY, 0.0, 1.0); vec3 c = mix(glow, mid, smoothstep(0.0, 0.18, h)); c = mix(c, top, smoothstep(0.15, 0.75, h)); gl_FragColor = vec4(c, 1.0); }'
+      })
+    );
+    dome.renderOrder = -10;
+    scene.add(dome);
+
+    var skyGroup = new THREE.Group();
+    camera.add(skyGroup);
+
+    var starCount = isMobile ? 110 : 220;
     var starPositions = new Float32Array(starCount * 3);
     for (var st = 0; st < starCount; st++) {
-      var theta = Math.random() * Math.PI * 2;
-      var phi = Math.random() * 0.55 + 0.05;
-      var r = 55 + Math.random() * 20;
-      starPositions[st * 3] = Math.cos(theta) * r * Math.cos(phi);
-      starPositions[st * 3 + 1] = 8 + Math.sin(phi) * r * 0.6;
-      starPositions[st * 3 + 2] = Math.sin(theta) * r * Math.cos(phi) - 10;
+      starPositions[st * 3] = (Math.random() - 0.5) * 120;
+      starPositions[st * 3 + 1] = -4 + Math.random() * 48;
+      starPositions[st * 3 + 2] = -60;
     }
     var starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-    var starMat = new THREE.PointsMaterial({ color: 0xdfe6f2, size: 0.18, transparent: true, opacity: 0.8, sizeAttenuation: true });
-    var stars = new THREE.Points(starGeo, starMat);
-    scene.add(stars);
+    var starMat = new THREE.PointsMaterial({ color: 0xdfe6f2, size: 0.35, transparent: true, opacity: 0.8, sizeAttenuation: true, fog: false });
+    skyGroup.add(new THREE.Points(starGeo, starMat));
 
-    var moon = new THREE.Mesh(new THREE.SphereGeometry(1.4, 20, 20), moonMat);
-    moon.position.set(-16, 20, -30);
-    scene.add(moon);
-    var moonHalo = new THREE.Mesh(new THREE.SphereGeometry(2.4, 16, 16), moonHaloMat);
-    moonHalo.position.copy(moon.position);
-    scene.add(moonHalo);
+    moonMat.fog = false;
+    moonHaloMat.fog = false;
+    var moon = new THREE.Mesh(new THREE.SphereGeometry(2.2, 20, 20), moonMat);
+    var moonHalo = new THREE.Mesh(new THREE.SphereGeometry(4.2, 16, 16), moonHaloMat);
+    skyGroup.add(moon, moonHalo);
+
+    // Luces lejanas de la ciudad (bokeh) para dar profundidad
+    for (var cl = 0; cl < (isMobile ? 22 : 40); cl++) {
+      addGlow(scene, (Math.random() - 0.5) * 90, 0.5 + Math.random() * 4.5, -26 - Math.random() * 12, 1.5 + Math.random() * 1.8, 0.1 + Math.random() * 0.18);
+    }
+
+    // Encuadre según pantalla: en vertical (celular) se abre el lente y se aleja la cámara
+    function fitCamera() {
+      var aspect = viewW / viewH;
+      camera.aspect = aspect;
+      camera.fov = aspect < 1 ? 52 : 42;
+      camera.updateProjectionMatrix();
+      camK = aspect < 1.2 ? Math.min(Math.pow(1.5 / aspect, 0.6), 2.1) : 1;
+      scene.fog.density = 0.04 / camK;
+      var halfV = THREE.MathUtils.degToRad(camera.fov / 2);
+      var halfH = Math.atan(Math.tan(halfV) * aspect);
+      moon.position.set(-60 * Math.tan(halfH) * 0.6, 60 * Math.tan(halfV) * 0.62, -60);
+      moonHalo.position.copy(moon.position);
+    }
+    fitCamera();
+
+    if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
+      window.addEventListener('pointermove', function (ev) {
+        pointer.x = (ev.clientX / window.innerWidth - 0.5) * 2;
+        pointer.y = -(ev.clientY / window.innerHeight - 0.5) * 2;
+      }, { passive: true });
+    }
+
+    var lastFrame = performance.now();
+    var perfFrames = 0;
+    var perfSum = 0;
 
     // ---------- Brasas flotantes ----------
     var emberCount = isMobile ? 24 : 48;
@@ -495,18 +609,38 @@
 
     function animate() {
       requestAnimationFrame(animate);
+      if (document.hidden) return;
+      var now = performance.now();
+      var dt = now - lastFrame;
+      if (isMobile && dt < 30) return;
+      lastFrame = now;
+      if (perfFrames < 100 && dt < 200) {
+        perfFrames++;
+        perfSum += dt;
+        if (perfFrames === 100 && pixelCap > 1 && perfSum / 100 > (isMobile ? 45 : 24)) {
+          pixelCap = 1;
+          applyQuality();
+          renderer.setSize(viewW, viewH);
+        }
+      }
       var elapsed = clock.getElapsedTime();
 
-      tables.forEach(function (t, i) {
-        var flicker = 0.6 + Math.sin(elapsed * 3 + i) * 0.15 + Math.sin(elapsed * 7 + i * 2) * 0.05;
-        t.userData.light.intensity = Math.max(flicker, 0.3);
-      });
+      if (!reduceMotion) {
+        tables.forEach(function (t, i) {
+          var f = 0.6 + Math.sin(elapsed * 3 + i) * 0.15 + Math.sin(elapsed * 7 + i * 2) * 0.05;
+          if (t.userData.light) t.userData.light.intensity = Math.max(f, 0.3);
+          t.userData.glow.material.opacity = 0.55 + (f - 0.6) * 1.2;
+        });
 
-      lanterns.forEach(function (l, i) {
-        var flicker = 0.75 + Math.sin(elapsed * 2.2 + i * 1.3) * 0.2;
-        l.userData.light.intensity = Math.max(flicker, 0.4);
-        l.userData.lantern.rotation.y = Math.sin(elapsed * 0.4 + i) * 0.02;
-      });
+        lanterns.forEach(function (l, i) {
+          var f = 0.75 + Math.sin(elapsed * 2.2 + i * 1.3) * 0.2;
+          if (l.userData.light) l.userData.light.intensity = Math.max(f, 0.4);
+          l.userData.glow.material.opacity = 0.6 + (f - 0.75) * 0.9;
+          l.userData.lantern.rotation.y = Math.sin(elapsed * 0.4 + i) * 0.02;
+        });
+
+        starMat.opacity = 0.72 + Math.sin(elapsed * 1.3) * 0.12;
+      }
 
       var emberPos = emberGeo.attributes.position;
       for (var ei = 0; ei < emberCount; ei++) {
@@ -517,23 +651,43 @@
       emberPos.needsUpdate = true;
 
       var target = getSegmentTarget(scrollProgress);
-      camera.position.x = lerp(camera.position.x, target.pos.x, 0.04);
-      camera.position.y = lerp(camera.position.y, target.pos.y, 0.04);
-      camera.position.z = lerp(camera.position.z, target.pos.z, 0.04);
-      currentLook.x = lerp(currentLook.x, target.look.x, 0.04);
-      currentLook.y = lerp(currentLook.y, target.look.y, 0.04);
-      currentLook.z = lerp(currentLook.z, target.look.z, 0.04);
+      var ease = reduceMotion ? 1 : 0.045;
+      var tx = target.look.x, ty = target.look.y, tz = target.look.z;
+      var px = tx + (target.pos.x - tx) * camK;
+      var py = ty + (target.pos.y - ty) * camK;
+      var pz = tz + (target.pos.z - tz) * camK;
+      if (!reduceMotion) {
+        px += Math.sin(elapsed * 0.25) * 0.25 + pointer.x * 0.9;
+        py += Math.sin(elapsed * 0.31) * 0.08 + pointer.y * 0.4;
+      }
+      camera.position.x = lerp(camera.position.x, px, ease);
+      camera.position.y = lerp(camera.position.y, py, ease);
+      camera.position.z = lerp(camera.position.z, pz, ease);
+      currentLook.x = lerp(currentLook.x, tx, ease);
+      currentLook.y = lerp(currentLook.y, ty, ease);
+      currentLook.z = lerp(currentLook.z, tz, ease);
       camera.lookAt(currentLook);
+      dome.position.copy(camera.position);
 
       renderer.render(scene, camera);
     }
     animate();
 
+    var resizeTimer;
     window.addEventListener('resize', function () {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      applyQuality();
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () {
+        var w = window.innerWidth;
+        var h = window.innerHeight;
+        var widthChanged = Math.abs(w - viewW) > 1;
+        // La barra del navegador móvil cambia el alto al hacer scroll: se ignora para que la escena no salte ni se estire
+        if (!widthChanged && w < 900 && h < viewH && viewH - h < 220) return;
+        viewW = w;
+        viewH = h;
+        applyQuality();
+        renderer.setSize(viewW, viewH);
+        fitCamera();
+      }, 120);
     });
   } catch (err) {
     if (window && window.console) {
