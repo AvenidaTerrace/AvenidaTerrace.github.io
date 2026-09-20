@@ -249,25 +249,80 @@ main, header, footer {
 }
 
 /* ---------- Gallery ---------- */
+/* Cada fila es "justificada": el ancho de cada foto es proporcional a su
+   proporción real (--ar), así todas quedan de la misma altura y sin recortes. */
 .gallery-item {
+  --ar: 1;
   position: relative;
-  border-radius: var(--radius-md);
+  flex: var(--ar) 1 0%;
+  min-width: 0;
+  aspect-ratio: var(--ar);
   overflow: hidden;
+  isolation: isolate;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
-  background:
-    radial-gradient(circle at 30% 30%, rgba(200, 164, 90, 0.22), transparent 60%),
-    var(--color-surface);
-  display: flex;
-  align-items: flex-end;
-  padding: var(--space-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-soft);
 }
 
-.gallery-item figcaption {
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(245, 234, 216, 0.65);
+.gallery-item img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.9s var(--ease-premium);
+}
+
+/* Velo oscuro suave abajo + marco dorado al pasar el mouse */
+.gallery-item::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 60%, rgba(9, 8, 6, 0.4) 100%);
+  box-shadow: inset 0 0 0 1px rgba(200, 164, 90, 0);
+  transition: box-shadow 0.5s var(--ease-soft);
+}
+
+.gallery-item:hover img {
+  transform: scale(1.06);
+}
+
+.gallery-item:hover::after {
+  box-shadow: inset 0 0 0 1px rgba(200, 164, 90, 0.6);
+}
+
+/* Logo (PNG transparente): tarjeta horizontal con brillo dorado detrás */
+.gallery-item--logo {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(200, 164, 90, 0.24), transparent 62%),
+    linear-gradient(160deg, rgba(200, 164, 90, 0.1), transparent 60%),
+    var(--color-surface);
+}
+
+.gallery-item--logo::after {
+  background: none;
+}
+
+.gallery-item--logo img {
+  transform: scale(0.94);
+}
+
+.gallery-item--logo:hover img {
+  transform: scale(0.99);
+}
+
+@media (max-width: 640px) {
+  .gallery-row {
+    flex-wrap: wrap;
+  }
+
+  /* La primera foto de cada fila ocupa todo el ancho; las otras dos van en pareja */
+  .gallery-row > .gallery-item:first-child {
+    flex: 1 1 100%;
+  }
 }
 
 /* ---------- Specialty cards ---------- */
@@ -287,23 +342,34 @@ main, header, footer {
 
 /* ---------- Historia (split) ---------- */
 .historia__visual {
+  position: relative;
   aspect-ratio: 4 / 5;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border);
-  background:
-    linear-gradient(160deg, rgba(200, 164, 90, 0.18), transparent 55%),
-    var(--color-surface);
-  display: flex;
-  align-items: flex-end;
-  padding: var(--space-md);
+  isolation: isolate;
 }
 
-.historia__visual span {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: rgba(245, 234, 216, 0.6);
+/* Marco dorado desplazado detrás de la foto */
+.historia__visual::before {
+  content: '';
+  position: absolute;
+  inset: 16px -16px -16px 16px;
+  border: 1px solid rgba(200, 164, 90, 0.4);
+  border-radius: var(--radius-lg);
+  z-index: -1;
+}
+
+.historia__visual img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-soft);
+}
+
+@media (max-width: 900px) {
+  .historia__visual::before {
+    inset: 12px -10px -12px 10px;
+  }
 }
 
 .historia__copy p {
